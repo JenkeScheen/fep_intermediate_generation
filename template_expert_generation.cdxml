@@ -2,7 +2,7 @@
 <!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >
 <CDXML
  CreationProgram="ChemDraw 20.1.0.112"
- Name="Unsaved ChemDraw Document.cdxml"
+ Name="template_expert_generation.cdxml"
  BoundingBox="-13.35 19.39 787.59 2321.35"
  WindowPosition="0 0"
  WindowSize="0 0"
@@ -19,7 +19,7 @@
  ShowTerminalCarbonLabels="no"
  ShowNonTerminalCarbonLabels="no"
  HideImplicitHydrogens="no"
- Magnification="845"
+ Magnification="723"
  LabelFont="21"
  LabelSize="10"
  LabelFace="96"
@@ -22009,12 +22009,12 @@
 (adjust)</s></t><t
  id="571"
  p="21.01 26.66"
- BoundingBox="21.17 19.39 487.01 39.58"
+ BoundingBox="21.17 19.39 478.67 39.58"
  Z="700"
  Warning="Chemical Interpretation is not possible for this label"
  LineHeight="auto"
- LineStarts="115 200"
-><s font="21" size="10" color="0" face="4">Task: for each index, adjust the center molecule such that it is chemically ‘in the middle’ of ligand A and B.
+ LineStarts="113 198"
+><s font="21" size="10" color="0" face="4">Task: for each row, adjust the center molecule such that it is chemically ‘in the middle’ of ligand A and B.
 For ease of interpretation, perturbed atoms/bonds in ligand A/B are indicated in red.</s></t><graphic
  id="397"
  BoundingBox="148.66 78.69 148.66 2321.05"
