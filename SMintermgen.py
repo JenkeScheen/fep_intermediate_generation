@@ -18,8 +18,6 @@ from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rdRGD
 from rdkit.Chem import PandasTools
 from openbabel import pybel
-
-
 import pandas as pd
 import itertools
 import re
@@ -46,7 +44,7 @@ class GenInterm():
             self.charge_original = self.return_charge(self.rgroup_large)
             self.permutate()
         self.weld()
-        self.remove_fragmented()
+        self.clean_intermediates()
         
         return self.df_interm
         
@@ -203,7 +201,7 @@ class GenInterm():
         """ 
         Put modified rgroups back on the core, returns intermediate
         """
-        self.df_interm['Intermediate'] = nan
+        self.df_interm['Intermediate'] = None
         
         for index, row in self.df_interm.iterrows():
             try:
@@ -212,18 +210,13 @@ class GenInterm():
                     combined_smiles = combined_smiles + '.' + row[column]
                 mol_to_weld = Chem.MolFromSmiles(combined_smiles)
                 welded_mol = self.weld_r_groups(mol_to_weld)
-                self.df_interm.at[index, 'Intermediate'] = welded_mol
+                self.df_interm.at[index, 'Intermediate'] = Chem.MolToSmiles(welded_mol)
             except AttributeError:
                 pass
             except IndexError:
                 pass
             except Chem.rdchem.AtomKekulizeException:
                 pass
-
-        ## not 100% sure this works on mol objects
-        self.df_interm = self.df_interm.drop_duplicates(subset='Intermediate')
-        self.df_interm = self.df_interm.drop(columns = [* ['Core'], *self.columns])
-        self.df_interm = self.df_interm.dropna()
         
 
     def weld_r_groups(self, input_mol):
@@ -273,10 +266,30 @@ class GenInterm():
         return final_mol
 
 
-    def remove_fragmented(self):
+    def clean_intermediates(self):
         """ 
-        Removes intermediates that contain multiple fragments
+        Drop duplicates & intermediates that are same as molecules in pair. Also removes intermediates that contain multiple fragments.
+        Drops columns that are not needed anymore
         """
-        self.df_interm['Fragmented'] = self.df_interm.apply(lambda row: '.' in Chem.MolToSmiles(row.Intermediate), axis=1)
-        self.df_interm = self.df_interm[self.df_interm['Fragmented'] == False]
+        # drop NoneType SMILES
+        self.df_interm = self.df_interm.dropna(subset = ['Intermediate'])
+        #remove duplicates
+        self.df_interm = self.df_interm.drop_duplicates(subset='Intermediate')
+        if len(self.df_interm) > 0:
+            #remove intermediates that are same as original pair
+            self.df_interm['Exists'] = self.df_interm.apply(lambda row: row.Intermediate in map(Chem.MolToSmiles, self.pair), axis=1)
+            self.df_interm = self.df_interm[self.df_interm['Exists'] == False]
+            self.df_interm = self.df_interm.drop(columns = ['Exists'])
+        
+        if len(self.df_interm) > 0:
+            # remove fragmented molecules
+            self.df_interm['Fragmented'] = self.df_interm.apply(lambda row: '.' in row.Intermediate, axis=1)
+            self.df_interm = self.df_interm[self.df_interm['Fragmented'] == False]
+            self.df_interm = self.df_interm.drop(columns = ['Fragmented'])
+        if len(self.df_interm) > 0:
+            # return mol objects
+            self.df_interm['Intermediate']  = self.df_interm.apply(lambda row: Chem.MolFromSmiles(row.Intermediate), axis=1)
+        
+        self.df_interm = self.df_interm.drop(columns = [* ['Core'], *self.columns])
+        self.df_interm = self.df_interm.dropna()
 
