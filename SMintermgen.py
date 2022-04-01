@@ -18,6 +18,8 @@ from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rdRGD
 from rdkit.Chem import PandasTools
 from openbabel import pybel
+pybel.ob.obErrorLog.SetOutputLevel(0)
+
 import pandas as pd
 import itertools
 import re
