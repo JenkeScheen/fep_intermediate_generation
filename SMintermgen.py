@@ -67,7 +67,7 @@ class GenInterm():
         self.multiple = False
         # find maximim common substructure & pass if none found
         ## possible to use different comparison functions
-        res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True)
+        res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True, timeout=2)
 
         core = Chem.MolFromSmarts(res.smartsString)
         res,_ = rdRGD.RGroupDecompose([core],self.pair,asSmiles=True,asRows=False)
