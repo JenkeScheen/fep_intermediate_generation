@@ -644,91 +644,44 @@ large R groups, which is our main target.
 
 """
 Approach:
-Do native interpolation but come up with a change_score based on n_perturbed
+Do native interpolation but use LOMAP-Score to pick the best median.
 """
 
+import lomap
 
-def get_fragments(lig1, lig2, scaffold=None):
-    """Runs and MCS algorithm and returns the fragments."""
-    if not scaffold:
-        scaffold = Chem.MolFromSmarts(_rdFMCS.FindMCS([lig1, lig2], # MCS of only lambda endpoints.
-                            # atomCompare=_rdFMCS.AtomCompare.CompareAny,
-                            # bondCompare=_rdFMCS.BondCompare.CompareAny,
-                            matchValences=False,
-                            ringMatchesRingOnly=True,
-                            completeRingsOnly=True,
-                            matchChiralTag=False,
-                            timeout=2).smartsString)    
+def computeLOMAPScore(lig1, lig2):
+    """Computes the LOMAP score for two input ligands, see https://github.com/OpenFreeEnergy/Lomap/blob/main/lomap/mcs.py."""
+    _AllChem.EmbedMolecule(lig1, useRandomCoords=True)
+    _AllChem.EmbedMolecule(lig2, useRandomCoords=True)
 
-    frags_1 = Chem.MolToSmiles(Chem.ReplaceCore(lig1, scaffold))
-    frags_2 = Chem.MolToSmiles(Chem.ReplaceCore(lig2, scaffold))
+    MC = lomap.MCS(lig1, lig2, verbose=None)
 
-    return frags_1, frags_2, scaffold
-
-def count_ha_change(frags_a, frags_b):
-    """Counts the absolute number of heavy atoms changed in a->median->b"""
-
-    double_letter_elements = ["Cl", "Br", "Si"]
-    transform_score = 0
-    for frag_A, frag_B in itertools.zip_longest(frags_a.split("."), frags_b.split(".")):
-
-        # clean up the strings by just retaining letters for easier counting.
-        if frag_A:
-            fragA_atoms = ''.join(x for x in frag_A if x.isalpha())
-        else:
-            fragA_atoms = "X"
-        if frag_B:
-            fragB_atoms = ''.join(x for x in frag_B if x.isalpha())
-        else:
-            fragB_atoms = "X"
-            
-        
-        # a substitution counts as a single-atom change:
-        if len(fragA_atoms) == len(fragB_atoms):
-            transform_score += 1
-        
-        elif len(fragA_atoms) != len(fragB_atoms):
-            # add number of heavy atoms changed.
-            if len(fragA_atoms) > len(fragB_atoms):
-                transform_score += len(fragA_atoms)
-            else:
-                transform_score += len(fragB_atoms)
-        
-        # correct for double-letter elements by subtracting 1.
-        for elem in double_letter_elements:
-            if elem in fragA_atoms:
-                transform_score -= 1
-            if elem in fragB_atoms:
-                transform_score -= 1
+    # # Rules calculations
+    mcsr = MC.mcsr()
+    strict = MC.tmcsr(strict_flag=True)
+    loose = MC.tmcsr(strict_flag=False)
+    mncar = MC.mncar()
+    atnum = MC.atomic_number_rule()
+    hybrid = MC.hybridization_rule()
+    sulf = MC.sulfonamides_rule()
+    het = MC.heterocycles_rule()
+    growring = MC.transmuting_methyl_into_ring_rule()
+    changering = MC.transmuting_ring_sizes_rule()
 
 
-    return transform_score
+    score = mncar * mcsr * atnum * hybrid
+    score *= sulf * het * growring
+    lomap_score = score*changering
+
+    return lomap_score
 
 def quantify_change(liga, median, ligb):
 
-    # first get the overall scaffold of the a->b perturbation.
-    lig_a_r, lig_b_r, scaffold = get_fragments(liga, ligb)
+    lomap_score_am = computeLOMAPScore(liga, median)
+    lomap_score_mb = computeLOMAPScore(median, ligb)
 
-    # then get the fragments of a->m and m->b using the overall scaffold
-    lig_am_r, lig_m_1, _ = get_fragments(liga, median)
-    lig_m_2, lig_mb_r, _ = get_fragments(median, ligb)
-    
-    # get the number of heavy atoms perturbed per edge using the overall scaffold.
-    num_ha_a_m = count_ha_change(lig_am_r, lig_m_1)
-    num_ha_m_b = count_ha_change(lig_m_2, lig_mb_r)
-    num_ha_a_b = count_ha_change(lig_a_r, lig_b_r )
 
-    # get ratio and sum of n perturbed for a->m and m->b
-    median_ratio = abs(1-(num_ha_a_m+0.01)/(num_ha_m_b+0.01))
-    median_sum = num_ha_a_m + num_ha_m_b
-
-    # get total perturbed of a->m + m->b vs total num perturbed 
-    perturbed_ratio = 1/ (num_ha_a_b/median_sum + 0.01)
-
-    # compute the change_score as the a->m and m->b num_ha corrected by the number of total perturbed.
-    change_score = median_ratio * perturbed_ratio
-
-    return change_score
+    return lomap_score_am+lomap_score_mb
 
 def interpolate_selfies(liga_smiles, ligb_smiles, num_samples):
     """
@@ -747,10 +700,15 @@ def interpolate_selfies(liga_smiles, ligb_smiles, num_samples):
     
     smiles_dict = {}
     for smiles in smiles_:
-        change_score = quantify_change(Chem.MolFromSmiles(liga_smiles), 
-                        Chem.MolFromSmiles(smiles), 
-                        Chem.MolFromSmiles(ligb_smiles))
-        smiles_dict[smiles] = change_score
+        try:
+            change_score = quantify_change(Chem.MolFromSmiles(liga_smiles), 
+                            Chem.MolFromSmiles(smiles), 
+                            Chem.MolFromSmiles(ligb_smiles))
+            smiles_dict[smiles] = change_score
+        except ValueError:
+            print("Skipping potential median; invalid structure.")
+            pass
+
     return smiles_dict
 
 
@@ -763,15 +721,36 @@ if __name__ == "__main__":
     liga = "CCNC(=O)Nc1cc(NC(=O)c2c(Cl)cccc2Cl)ccn1"
     ligb = "CC(=O)Nc1cc(NC(=O)c2c(Cl)cccc2Cl)ccn1"
 
-    medians = interpolate_selfies(liga, ligb, 10)
-    for k, v in medians.items():
-        print(v, k)
+    # medians = interpolate_selfies(liga, ligb, 10)
+    # for k, v in medians.items():
+    #     print(v, k)
+    print(liga)
+    liga = Chem.MolFromSmiles(liga)
+    ligb = Chem.MolFromSmiles(ligb)
+
+    _AllChem.EmbedMolecule(liga, useRandomCoords=True)
+    _AllChem.EmbedMolecule(ligb, useRandomCoords=True)
+
+    MC = lomap.MCS(liga, ligb, time=2, verbose=None)
 
 
+    # # Rules calculations
+    mcsr = MC.mcsr()
+    strict = MC.tmcsr(strict_flag=True)
+    loose = MC.tmcsr(strict_flag=False)
+    mncar = MC.mncar()
+    atnum = MC.atomic_number_rule()
+    hybrid = MC.hybridization_rule()
+    sulf = MC.sulfonamides_rule()
+    het = MC.heterocycles_rule()
+    growring = MC.transmuting_methyl_into_ring_rule()
+    changering = MC.transmuting_ring_sizes_rule()
 
 
-
-
+    score = mncar * mcsr * atnum * hybrid
+    score *= sulf * het * growring
+    score *= changering
+    print("FINAL SCORE:",score)
 
 
 
