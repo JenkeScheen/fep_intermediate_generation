@@ -17,6 +17,7 @@ from rdkit.Chem import Draw
 from rdkit.Chem import MolToSmiles as mol2smi
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.*')
+import tqdm
 
 def randomize_smiles(mol):
     '''Returns a random (dearomatized) SMILES given an rdkit mol object of a molecule.
@@ -648,6 +649,7 @@ Do native interpolation but use LOMAP-Score to pick the best median.
 """
 
 import lomap
+import sys
 
 def computeLOMAPScore(lig1, lig2):
     """Computes the LOMAP score for two input ligands, see https://github.com/OpenFreeEnergy/Lomap/blob/main/lomap/mcs.py."""
@@ -680,8 +682,7 @@ def quantify_change(liga, median, ligb):
     lomap_score_am = computeLOMAPScore(liga, median)
     lomap_score_mb = computeLOMAPScore(median, ligb)
 
-
-    return lomap_score_am+lomap_score_mb
+    return lomap_score_am,lomap_score_mb
 
 def interpolate_selfies(liga_smiles, ligb_smiles, num_samples):
     """
@@ -695,11 +696,16 @@ def interpolate_selfies(liga_smiles, ligb_smiles, num_samples):
     num_top_iter          = num_samples   # Number of molecules that are selected after each iteration
 
 
-    smiles_, best_scores = get_median_mols(liga_smiles, ligb_smiles, num_tries, 
-                        num_random_samples, collect_bidirectional, num_top_iter)
+    # smiles_, best_scores = get_median_mols(liga_smiles, ligb_smiles, num_tries, 
+    #                     num_random_samples, collect_bidirectional, num_top_iter)
+
+    # instead, generate a path of molecules. compute LOMAP-Score for each 
+    # candidate intermediate, find the optimal.
+    smiles_, _ = get_compr_paths(liga_smiles, ligb_smiles, num_tries, 
+                        num_random_samples, collect_bidirectional)
     
     smiles_dict = {}
-    for smiles in smiles_:
+    for smiles in tqdm.tqdm(smiles_[0]):
         try:
             change_score = quantify_change(Chem.MolFromSmiles(liga_smiles), 
                             Chem.MolFromSmiles(smiles), 
@@ -713,44 +719,82 @@ def interpolate_selfies(liga_smiles, ligb_smiles, num_samples):
 
 
 if __name__ == "__main__":
-
+    import matplotlib.pyplot as plt
 
     # instead, do naive interpolation with many candidates and cleverly pick the top median. 
     # interpolation settings.
     print("Tests.")
-    liga = "CCNC(=O)Nc1cc(NC(=O)c2c(Cl)cccc2Cl)ccn1"
+    liga = "CC(=O)CNCNCC(=O)CCNC(=O)Nc1cc(NC(=O)c2c(Cl)cccc2Cl)ccn1"
     ligb = "CC(=O)Nc1cc(NC(=O)c2c(Cl)cccc2Cl)ccn1"
+    print("a->b:", computeLOMAPScore(Chem.MolFromSmiles(liga), Chem.MolFromSmiles(ligb)))
+    medians = interpolate_selfies(liga, ligb, 5)
 
-    # medians = interpolate_selfies(liga, ligb, 10)
+    for k, v in medians.items():
+        print(v) #print(medians)
+    # ls_am = []
+    # ls_mb = []
+    # sums = []
+    # min_score = []
+    # max_score = []
+    # avg_score = []
+    # custom_scores = []
+
+
     # for k, v in medians.items():
     #     print(v, k)
-    print(liga)
-    liga = Chem.MolFromSmiles(liga)
-    ligb = Chem.MolFromSmiles(ligb)
+    #     ls_am.append(v[0])
+    #     ls_mb.append(v[1])
+    #     sums.append(v[0]+v[1])
+    #     min_score.append(min(v))
+    #     max_score.append(max(v))
+    #     avg_score.append(np.mean(v))
 
-    _AllChem.EmbedMolecule(liga, useRandomCoords=True)
-    _AllChem.EmbedMolecule(ligb, useRandomCoords=True)
+    #     custom_score = np.std(v) 
+    #     custom_scores.append(custom_score)
 
-    MC = lomap.MCS(liga, ligb, time=2, verbose=None)
-
-
-    # # Rules calculations
-    mcsr = MC.mcsr()
-    strict = MC.tmcsr(strict_flag=True)
-    loose = MC.tmcsr(strict_flag=False)
-    mncar = MC.mncar()
-    atnum = MC.atomic_number_rule()
-    hybrid = MC.hybridization_rule()
-    sulf = MC.sulfonamides_rule()
-    het = MC.heterocycles_rule()
-    growring = MC.transmuting_methyl_into_ring_rule()
-    changering = MC.transmuting_ring_sizes_rule()
+    # plt.plot(ls_am, label="A->M")
+    # plt.plot(ls_mb, label="M->B")
+    # plt.plot(sums, label="SUM")
+    # # plt.plot(min_score, label="MIN()")
+    # # plt.plot(max_score, label="MAX()")
+    # # plt.plot(avg_score, label="MEAN()")
+    # # plt.plot(custom_scores, label="STD()")
 
 
-    score = mncar * mcsr * atnum * hybrid
-    score *= sulf * het * growring
-    score *= changering
-    print("FINAL SCORE:",score)
+
+    # plt.legend()
+    # plt.ylabel("LOMAP-Score")
+    # plt.xlabel("Chemical path vector (n)")
+    # plt.show()
+
+
+    # print(liga)
+    # liga = Chem.MolFromSmiles(liga)
+    # ligb = Chem.MolFromSmiles(ligb)
+
+    # _AllChem.EmbedMolecule(liga, useRandomCoords=True)
+    # _AllChem.EmbedMolecule(ligb, useRandomCoords=True)
+
+    # MC = lomap.MCS(liga, ligb, time=2, verbose=None)
+
+
+    # # # Rules calculations
+    # mcsr = MC.mcsr()
+    # strict = MC.tmcsr(strict_flag=True)
+    # loose = MC.tmcsr(strict_flag=False)
+    # mncar = MC.mncar()
+    # atnum = MC.atomic_number_rule()
+    # hybrid = MC.hybridization_rule()
+    # sulf = MC.sulfonamides_rule()
+    # het = MC.heterocycles_rule()
+    # growring = MC.transmuting_methyl_into_ring_rule()
+    # changering = MC.transmuting_ring_sizes_rule()
+
+
+    # score = mncar * mcsr * atnum * hybrid
+    # score *= sulf * het * growring
+    # score *= changering
+    # print("FINAL SCORE:",score)
 
 
 
