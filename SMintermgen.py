@@ -20,6 +20,8 @@ from rdkit.Chem import PandasTools
 from openbabel import pybel
 pybel.ob.obErrorLog.SetOutputLevel(0)
 
+from sanifix import AdjustAromaticNs
+
 import pandas as pd
 import itertools
 import re
@@ -41,6 +43,8 @@ class GenInterm():
         self.find_largest()
         self.get_rgroups()
         # for each r-group
+        # create new dataframe for storing adapted rgroups [has Core, R1, ... Rn]
+        self.df_interm = pd.DataFrame(columns = self.df.columns[1:]).drop(columns = ['Largest'])
         for self.column in self.columns:
             self.tokenize()
             self.charge_original = self.return_charge(self.rgroup_large)
@@ -67,18 +71,27 @@ class GenInterm():
         self.multiple = False
         # find maximim common substructure & pass if none found
         ## possible to use different comparison functions
-        res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True, timeout=2)
-
+        res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True, completeRingsOnly=True, timeout=2)
         core = Chem.MolFromSmarts(res.smartsString)
+        
         res,_ = rdRGD.RGroupDecompose([core],self.pair,asSmiles=True,asRows=False)
         self.df_rgroup= pd.DataFrame(res)
+        
+        # adjust aromatic Ns to [nH] if needed if core is not a valid SMILES
+        res_core = self.df_rgroup['Core'][0]
+        if Chem.MolFromSmiles(res_core) == None:
+            adj_core=AdjustAromaticNs(Chem.MolFromSmiles(res_core, sanitize=False))
+            try:
+                self.df_rgroup['Core'][0] = Chem.MolToSmiles(adj_core)
+            except:
+                pass
 
         if len(self.df_rgroup.columns) > 2:
             self.multiple = True
             self.columns = self.df_rgroup.columns[1:]
         else:
             self.columns = ['R1']
-
+        
         # remove hydrogens post match
         for column in self.columns:
             self.df_rgroup.loc[0,column] = self.remove_Hfragmens(self.df_rgroup.loc[0,column])
@@ -119,7 +132,7 @@ class GenInterm():
         Remove tokens or edit tokens from R-groups of the largest molecule. Currently only able to remove tokens
         """
         # create new dataframe for storing adapted rgroups [has Core, R1, ... Rn]
-        self.df_interm = pd.DataFrame(columns = self.df.columns[1:]).drop(columns = ['Largest'])
+        self.df_interm_rgroup = pd.DataFrame(columns = self.df.columns[1:]).drop(columns = ['Largest'])
 
         # sample some/all options where tokens from small r-group are inserted
         available_small = [item for item in self.tokens_small if not re.match(r"(\[\*\:.\]|\.)", item)]
@@ -164,17 +177,17 @@ class GenInterm():
                             # keep fragments that do not introduce/loose charge
                             # using openbabel & looking at disconnected rgroups could sometimes be incorrect
                             if self.check_charge(interm):
-                                self.df_interm.loc[self.df_interm.shape[0], self.column] = interm
+                                self.df_interm_rgroup.loc[self.df_interm_rgroup.shape[0], self.column] = interm
         
         # drop duplicate R groups to save time
-        self.df_interm = self.df_interm.drop_duplicates(subset=self.column)   
-
-        self.df_interm['Core'] = self.df.at[0,'Core']
+        self.df_interm_rgroup = self.df_interm_rgroup.drop_duplicates(subset=self.column)   
+        self.df_interm_rgroup['Core'] = self.df.at[0,'Core']
         # in case of multiple rgroups also add unchanged rgroups to df
         if self.multiple == True:
             for rgroup in self.columns:
                 if rgroup != self.column:
-                    self.df_interm[rgroup] = self.df.at[0,rgroup]
+                    self.df_interm_rgroup[rgroup] = self.df.at[0,rgroup]
+        self.df_interm = pd.concat([self.df_interm, self.df_interm_rgroup])
 
 
     def check_charge(self, interm):
@@ -204,12 +217,12 @@ class GenInterm():
         Put modified rgroups back on the core, returns intermediate
         """
         self.df_interm['Intermediate'] = None
-        
         for index, row in self.df_interm.iterrows():
             try:
                 combined_smiles = row['Core']
                 for column in self.columns:
                     combined_smiles = combined_smiles + '.' + row[column]
+                combined_smiles = re.sub('\.{2,}', '.', combined_smiles)
                 mol_to_weld = Chem.MolFromSmiles(combined_smiles)
                 welded_mol = self.weld_r_groups(mol_to_weld)
                 self.df_interm.at[index, 'Intermediate'] = Chem.MolToSmiles(welded_mol)
