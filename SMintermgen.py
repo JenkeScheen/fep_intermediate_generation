@@ -73,6 +73,7 @@ class GenInterm():
         ## possible to use different comparison functions
         res=rdFMCS.FindMCS(self.pair, matchValences=True, ringMatchesRingOnly=True, completeRingsOnly=True, timeout=2)
         core = Chem.MolFromSmarts(res.smartsString)
+        # partial rings in mcs bug, see https://github.com/rdkit/rdkit/issues/945
         
         res,_ = rdRGD.RGroupDecompose([core],self.pair,asSmiles=True,asRows=False)
         self.df_rgroup= pd.DataFrame(res)
