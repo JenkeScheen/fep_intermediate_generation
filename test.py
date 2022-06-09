@@ -46,9 +46,9 @@ def scoreIntermediates(liga, ligb, intermediates):
     smiles_dict = {}
 
     if len(intermediates) > 0:
-        if len(intermediates) > 20:
+        #if len(intermediates) > 20:
             #sample intermediates, currently done at random
-            intermediates = sample(intermediates, 20)
+            #intermediates = sample(intermediates, 20)
         for intermediate in intermediates:
             try:
                 change_score = quantify_change(liga, 
