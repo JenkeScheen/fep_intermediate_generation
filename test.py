@@ -53,16 +53,17 @@ def scoreIntermediates(liga, ligb, intermediates):
             try:
                 change_score = quantify_change(liga, 
                                 intermediate, 
-                                ligb)
+                                ligb,
+                                single_top= False)
                 smiles_dict[intermediate] = change_score
             except ValueError:
                 print("Skipping potential median; invalid structure.")
     
     if len(smiles_dict.keys()) > 0:
         top_median = max(smiles_dict, key = smiles_dict.get)
-        return top_median
+        return top_median, max(smiles_dict.values())
     else:
-        return Chem.MolFromSmiles("c1ccccc1")
+        return Chem.MolFromSmiles("c1ccccc1"), None
 
 if __name__== "__main__":
     perts_to_intrap = perts_to_intrap = [
@@ -91,8 +92,9 @@ if __name__== "__main__":
     ["jnk1", "18634-1~18659-1"], # together with next; do both directions (A->B/B->A) result in same intermediate?
     ["jnk1", "18659-1~18634-1"]
                 ]
-
+    all_intermediatess = []
     top_intermediates = []
+    lomap_scores = []
     for tgt, pert in perts_to_intrap:
         first_stamp = int(round(time.time() * 1000))
         # get the endpoint molecular objects.
@@ -104,12 +106,20 @@ if __name__== "__main__":
             liga, ligb = [ Chem.rdmolfiles.SDMolSupplier(f"ligands/{tgt}/lig_{lig}.sdf")[0] for lig in [liga, ligb]]   
         # generate the intermediate.
         all_intermediates = generateIntermediate(liga, ligb) 
-        top_intermediate = scoreIntermediates(liga, ligb, all_intermediates)
+        all_intermediatess.append(all_intermediates)
+        top_intermediate, lomap_score = scoreIntermediates(liga, ligb, all_intermediates)
 
         top_intermediates.append(Chem.MolToSmiles(top_intermediate))
+        lomap_scores.append(lomap_score)
 
-        with open("test", "wb") as fp:   #Pickling
+        with open("all_intermediates", "wb") as fp:   #Pickling
+            pickle.dump(all_intermediatess, fp)
+
+        with open("top_intermediates", "wb") as fp:   #Pickling
             pickle.dump(top_intermediates, fp)
+
+        with open("lomap_scores", "wb") as fp:   #Pickling
+            pickle.dump(lomap_scores, fp)
 
     print(top_intermediates)
 

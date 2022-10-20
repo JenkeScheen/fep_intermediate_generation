@@ -35,10 +35,10 @@ def computeLOMAPScore(lig1, lig2, single_top = True):
     return lomap_score
 
 
-def quantify_change(liga, median, ligb):
+def quantify_change(liga, median, ligb, single_top):
 
-    lomap_score_am = computeLOMAPScore(liga, median)
-    lomap_score_mb = computeLOMAPScore(median, ligb)
+    lomap_score_am = computeLOMAPScore(liga, median, single_top)
+    lomap_score_mb = computeLOMAPScore(median, ligb, single_top)
 
 
     return lomap_score_am+lomap_score_mb
